@@ -1,14 +1,16 @@
 from datetime import datetime
 import uuid
-import requests
+import requests # type: ignore
 import json
-from airflow import DAG
-from airflow.operators.python import PythonOperator
+from airflow import DAG # type: ignore
+from airflow.operators.python import PythonOperator # type: ignore
+import time 
 
 default_args = {
-    'owner':'airscholar',
-    'start_date':datetime(2024,9,16,10,00)
+    'owner': 'airscholar',
+    'start_date': datetime.utcnow()
 }
+
 
 
 def get_data():
@@ -36,12 +38,27 @@ def format_data(res):
     data['phone'] = res['phone']
     data['picture'] = res['picture']['medium']
 
-    return data
 
 def stream_data():
-    res= get_data()
-    res = format_data(res)
-    print(json.dumps(res, indent=3))
+    print('data')
+    from kafka import KafkaProducer # type: ignore
+    import logging
+    
+    logging.basicConfig(level=logging.DEBUG)
+    producer = KafkaProducer(bootstrap_servers=['broker:29092'], max_block_ms=5000)
+    end_time = time.time() + 60  # Exécuter pendant 60 secondes
+    
+    while time.time() < end_time:
+        try:
+            res = get_data()
+            res = format_data(res)
+            producer.send('users_created', json.dumps(res).encode('utf-8'))
+            logging.info(f"Sent data: {res}")
+            time.sleep(5)  # Attendre 5 secondes entre les envois
+        except Exception as e:
+            logging.error(f'An error occurred: {e}')
+
+
 
 with DAG('user_automation',
         default_args=default_args,
@@ -53,4 +70,3 @@ with DAG('user_automation',
             python_callable =stream_data
         )
 
-stream_data()
